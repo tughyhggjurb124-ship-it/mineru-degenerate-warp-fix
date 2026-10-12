@@ -1,0 +1,79 @@
+Real evidence from a MinerU 4.0.12 install (site-packages paths shortened, job id and
+file name redacted). The parse server runs with `--tier basic` and writes this to
+
+    <MINERU_HOME>/logs/doclib.parse-server.stderr.log
+
+The error envelope a client receives instead of a result
+--------------------------------------------------------
+
+    {
+      "error": {
+        "type": "engine_error",
+        "code": "parse_failed",
+        "message": "Unsupported warp settings",
+        "param": null
+      }
+    }
+
+No output file is written, so the whole page range has to be re-parsed.
+
+The log record
+--------------
+
+    ERROR:    Parse-server job file failed: job_id=job_<redacted> file='source.pdf' tier=basic page_range='49-55'
+    Traceback (most recent call last):
+      File "<site-packages>\mineru\parser\api_server.py", line 1756, in _run_job
+        result = await parse_async(
+      File "<site-packages>\mineru\parser\__init__.py", line 57, in parse_async
+        return await parser.parse_async(path, page_range=page_range, source_context=source_context)
+      File "<site-packages>\mineru\parser\mineru_parser.py", line 104, in parse_async
+        middle_json, model_output = await self._arun_analysis(prepared)
+      File "<site-packages>\mineru\parser\mineru_parser.py", line 129, in _arun_analysis
+        return await aio_doc_analyze(
+      File "<site-packages>\mineru\backend\analyze.py", line 115, in aio_doc_analyze
+        return await run_sync(
+      File "<site-packages>\mineru\utils\async_utils.py", line 30, in run_sync
+        return await asyncio.shield(work)
+      File "<python>\Lib\asyncio\threads.py", line 25, in to_thread
+        return await loop.run_in_executor(None, func_call)
+      File "<python>\Lib\concurrent\futures\thread.py", line 59, in run
+        result = self.fn(*self.args, **self.kwargs)
+      File "<site-packages>\mineru\backend\analyze.py", line 53, in doc_analyze
+        result = analyze_pdf(
+      File "<site-packages>\mineru\backend\analysis\pdf\pipeline.py", line 98, in analyze_pdf
+        model_list = process_pdf_windows(
+      File "<site-packages>\mineru\backend\analysis\pdf\window.py", line 788, in process_pdf_windows
+        _process_pdf_window(
+      File "<site-packages>\mineru\backend\analysis\pdf\window.py", line 616, in _process_pdf_window
+        return _finish_pdf_window(state, result, effort=effort, parse_mode=parse_mode, hybrid_model=hybrid_model)
+      File "<site-packages>\mineru\backend\analysis\pdf\window.py", line 533, in _finish_pdf_window
+        window_model_list = _process_text_and_formulas(
+      File "<site-packages>\mineru\backend\analysis\pdf\window.py", line 285, in _process_text_and_formulas
+        ocr_res_list = _ocr_det(
+      File "<site-packages>\mineru\backend\analysis\pdf\ocr.py", line 171, in _ocr_det
+        _append_ocr_det_result(crop, ocr_res, need_rec_img)
+      File "<site-packages>\mineru\backend\analysis\pdf\ocr.py", line 137, in _append_ocr_det_result
+        ocr_result_list = get_ocr_result_list(
+      File "<site-packages>\mineru\model\ocr\results.py", line 67, in get_ocr_result_list
+        img_crop = get_rotate_crop_image_for_text_rec(ori_im, tmp_box)
+      File "<site-packages>\mineru\model\ocr\image.py", line 148, in get_rotate_crop_image_for_text_rec
+        return rotate_vertical_crop_if_needed(get_rotate_crop_image(img, points))
+      File "<site-packages>\mineru\model\ocr\image.py", line 103, in get_rotate_crop_image
+        dst_img = warp_image(img, matrix, (img_crop_width, img_crop_height), border="replicate", interpolation="cubic")
+      File "<site-packages>\docvortex\image.py", line 52, in warp_image
+        return implementation(image, matrix, size, interpolation=interpolation, border=border, value=value)
+      File "<site-packages>\docvortex\foundation\_image_numeric.py", line 570, in warp_image
+        raise ValueError("Unsupported warp settings")
+    ValueError: Unsupported warp settings
+
+Reproduction
+------------
+
+    # with the PDF and the same page range
+    mineru parse source.pdf --tier basic --pages 49-55 --wait 900 --json -o out.md --force
+
+    # -> the engine_error envelope above, exit code 1, no out.md
+
+After the patch, the same command finishes and writes `out.md` with the expected
+`<!-- page N of TOTAL -->` markers. `repro/reproduce.py` shows the same failure at
+function level, without needing a PDF or downloaded models.

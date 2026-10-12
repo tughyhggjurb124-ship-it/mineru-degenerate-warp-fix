@@ -1,0 +1,34 @@
+diff --git a/docvortex/foundation/_image_numeric.py b/docvortex/foundation/_image_numeric.py
+index 1a47249..f7e3980 100644
+--- a/docvortex/foundation/_image_numeric.py
++++ b/docvortex/foundation/_image_numeric.py
+@@ -566,8 +566,11 @@ def warp_image(
+ ) -> np.ndarray:
+     """以连续坐标逆向采样，明确边界、舍入及三次核计算精度。"""
+     array, gray = _image(image)
+-    if interpolation not in ("nearest", "linear", "cubic") or border not in ("constant", "replicate") or min(size) <= 0:
++    if interpolation not in ("nearest", "linear", "cubic") or border not in ("constant", "replicate"):
+         raise ValueError("Unsupported warp settings")
++    # A degenerate region yields a zero-size target (the caller's int() truncation). Zero size is
++    # not an invalid setting: clamp to 1 pixel so one bad box cannot fail a whole page.
++    size = (max(1, int(size[0])), max(1, int(size[1])))
+     matrix = np.asarray(matrix, dtype=np.float64)
+     affine = matrix.shape == (2, 3)
+     if affine:
+diff --git a/mineru/model/ocr/image.py b/mineru/model/ocr/image.py
+index 7b5cf03..3a28718 100644
+--- a/mineru/model/ocr/image.py
++++ b/mineru/model/ocr/image.py
+@@ -94,8 +94,10 @@ def get_rotate_crop_image(img: np.ndarray, points: np.ndarray) -> np.ndarray:
+         if new_img.shape[0] > 0 and new_img.shape[1] > 0:
+             return new_img
+ 
+-    img_crop_width = int(max(np.linalg.norm(points[0] - points[1]), np.linalg.norm(points[2] - points[3])))
+-    img_crop_height = int(max(np.linalg.norm(points[0] - points[3]), np.linalg.norm(points[1] - points[2])))
++    # A degenerate text box (four nearly coincident points) truncates to 0 through int(), and the
++    # perspective warp kernel rejects a zero-size target: clamp the crop to at least 1 pixel.
++    img_crop_width = max(1, int(max(np.linalg.norm(points[0] - points[1]), np.linalg.norm(points[2] - points[3]))))
++    img_crop_height = max(1, int(max(np.linalg.norm(points[0] - points[3]), np.linalg.norm(points[1] - points[2]))))
+     pts_std = np.float32([[0, 0], [img_crop_width, 0], [img_crop_width, img_crop_height], [0, img_crop_height]])
+     # 四边形裁图调用共享数值内核，轴对齐区域继续直接复制。
+ 
